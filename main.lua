@@ -5,15 +5,20 @@ local tween_service = game:GetService("TweenService")
 
 
 
+-- CONSTANTS
+local LOCK_KEY = Enum.KeyCode.Tab
+
+local SWITCH_KEY = Enum.UserInputType.MouseButton2
+
+local MAX_DISTANCE = 50
+
+local CAMERA_SPEED = .3
+
+local CAMERA_OFFSET = CFrame.new(0, 5, 10)
+
+
+
 -- VARIABLES
-local tab = Enum.KeyCode.Tab
-
-local right_click = Enum.UserInputType.MouseButton2
-
-local max_distance = 50
-
-local targeting = false
-
 local player = game.Players.LocalPlayer
 
 local character = player.Character
@@ -22,15 +27,23 @@ local humanoid = character.Humanoid
 
 local humanoidRootPart = character.HumanoidRootPart
 
-local camera = workspace.CurrentCamera
+local targeting = false
 
-camera.CameraType = "Follow"
+local camera = workspace.Camera
 
 local focus_point
 
-local cam_speed = .3
+local enemy_list = {}
 
-local cam_offset = CFrame.new(0, 5, 10)
+for i, v in pairs(game.Workspace:GetDescendants()) do
+	
+	if v.ClassName == "Humanoid" then
+		
+		table.insert(enemy_list, v.Parent)
+		
+	end
+	
+end
 
 local enemy
 
@@ -49,35 +62,39 @@ local function initializeLock()
 
 	camera.CameraType = "Scriptable"
 
-	camera.FieldOfView = 70
-
 	humanoid.AutoRotate = false
+	
+	return
 
 end
 
 
--- 
+-- Slightly different settings to reset the lock on
 local function specialReset()
 
 	targeting = false
 
 	focus_point:Destroy()
 	
+	return
+
 end
 
 
 -- Resets to default settings for camera and player
 local function reset()
-	
+
 	targeting = false
-	
-	camera.CameraType = "Follow"
+
+	camera.CameraType = "Custom"
 	
 	camera.CameraSubject = character.Humanoid
 
 	humanoid.AutoRotate = true
 
 	focus_point:Destroy()
+	
+	return
 
 end
 
@@ -96,12 +113,6 @@ local function createFocusPoint(enemy)
 
 	focus_point.Transparency = 1
 
-	focus_point.Color = Color3.fromRGB(255, 0, 251)
-
-	midpoint = (humanoidRootPart.Position + enemy.HumanoidRootPart.Position) / 2
-
-	focus_point.Position = midpoint
-
 	return
 
 end
@@ -113,22 +124,29 @@ local function rotateCamera(enemy)
 	midpoint = (humanoidRootPart.Position + enemy.HumanoidRootPart.Position) / 2
 
 	focus_point.Position = midpoint
-	
+
 	--camera:Interpolate(humanoidRootPart.CFrame:ToWorldSpace(cam_offset), focus_point.CFrame, cam_speed)
 
 	-- Get final point that the camera needs to turn to
-	
+
 	local tween = tween_service:Create(
+		
 		camera,
-		TweenInfo.new(cam_speed, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+		
+		TweenInfo.new(CAMERA_SPEED, Enum.EasingStyle.Sine, Enum.EasingDirection.Out),
+		
 		{
-			CFrame = humanoidRootPart.CFrame:ToWorldSpace(cam_offset) * CFrame.Angles(math.rad(-25), 0, 0),
+			
+			CFrame = humanoidRootPart.CFrame:ToWorldSpace(CAMERA_OFFSET) * CFrame.Angles(math.rad(-25), 0, 0),
+			
 			Focus = focus_point.CFrame
+			
 		}
+		
 	)
 
 	tween:Play()
-	
+
 end
 
 
@@ -156,7 +174,7 @@ local function getEnemiesInRange(list)
 		local enemy_position = list[i].HumanoidRootPart.Position
 
 		-- Check if enemy is within max_distance
-		if (enemy_position - humanoidRootPart.Position).Magnitude < max_distance then
+		if (enemy_position - humanoidRootPart.Position).Magnitude < MAX_DISTANCE then
 
 			-- Add current enemy to list of enemies in range
 			table.insert(inRange, list[i])
@@ -184,7 +202,7 @@ local function switchTargets(inRange, enemy)
 
 		-- All enemies right of player
 		local enemies_right_of_player = {}
-		
+
 		-- All enemies left of player
 		local enemies_left_of_player = {}
 
@@ -206,7 +224,7 @@ local function switchTargets(inRange, enemy)
 			end
 
 		end
-		
+
 		-- Find enemies to the left of the player
 		for i, humanoids in pairs(inRange) do
 
@@ -225,7 +243,7 @@ local function switchTargets(inRange, enemy)
 			end
 
 		end
-		
+
 		local player_vector = humanoidRootPart.Position - enemy.HumanoidRootPart.Position
 
 		local min_angle_enemy
@@ -233,11 +251,11 @@ local function switchTargets(inRange, enemy)
 		local smallest_angle
 
 		local enemy_vector
-		
+
 		-- Check if enemies right
 		if enemies_right_of_player[1] then
-			
-			
+
+
 			-- Loop through each possible enemy to find the one with the smallest angle relative to the player
 			for x, something in pairs(enemies_right_of_player) do
 
@@ -265,11 +283,11 @@ local function switchTargets(inRange, enemy)
 				end
 
 			end
-		
-		
-		-- Check if enemies left
+
+
+			-- Check if enemies left
 		elseif enemies_left_of_player[1] then
-			
+
 			-- Loop through each possible enemy to find the one with the smallest angle relative to the player
 			for x, something in pairs(enemies_left_of_player) do
 
@@ -309,21 +327,24 @@ end
 
 -- Lock onto enemy
 local function lockOn(enemy)
-
+	
+	-- Set up camera
 	initializeLock()
 
 	while targeting do
-
-		if (enemy.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude > max_distance then
+		
+		-- Player is too far from the current target
+		if (enemy.HumanoidRootPart.Position - humanoidRootPart.Position).Magnitude > MAX_DISTANCE then
 
 			reset()
 			
+		-- Targeted enemy dies, switch to nearest enemy
 		elseif enemy.Humanoid.Health <= 0 then
-			
+
 			local inRange = getEnemiesInRange(workspace.Enemies:GetChildren())
-			
+
 			if #inRange > 1 then
-				
+
 				enemy = switchTargets(inRange, enemy)
 
 				specialReset()
@@ -335,21 +356,21 @@ local function lockOn(enemy)
 				initializeLock()
 
 				lockOn(enemy)
-				
+
 			else
-				
+
 				reset()
-				
+
 				return
-				
+
 			end
-			
+
 		end
-			
+
 		rotatePlayer(enemy)
 
 		rotateCamera(enemy)
-			
+
 		wait()
 
 	end
@@ -361,7 +382,7 @@ end
 
 -- Finds enemy that is most center to the player from their current view direction
 local function mostCenter(inRange)
-	
+
 	-- Get direction that player is currently facing
 	local player_vector = humanoidRootPart.CFrame.LookVector
 
@@ -370,7 +391,7 @@ local function mostCenter(inRange)
 	local smallest_angle
 
 	local enemy_vector
-	
+
 	-- Loop through each possible enemy to find the one with the smallest angle relative to the player
 	for x, something in pairs(inRange) do
 
@@ -398,50 +419,52 @@ local function mostCenter(inRange)
 		end
 
 	end
-	
+
 	return min_angle_enemy
-	
+
 end
 
 
 -- User presses button
 local function button()
-
-	-- User is not already targeting
+	
+	-- User not targeting
 	if not targeting then
-
-		if uis:IsKeyDown(tab) then
-
-			local inRange = getEnemiesInRange(workspace.Enemies:GetChildren())
-
-			enemy = mostCenter(inRange)
-
+		
+		-- Detect lock key
+		if uis:IsKeyDown(LOCK_KEY) then
+			
+			-- Get all humanoids in range of player
+			enemy = mostCenter(getEnemiesInRange(enemy_list))
+			
 			if enemy then
-
+				
 				createFocusPoint(enemy)
-
+				
 				initializeLock()
-
+				
 				lockOn(enemy)
-
+				
+				return
+				
 			end
-
+			
 		end
-
-		-- User is already targeting
+		
+	-- User already targeting
 	elseif targeting then
-
-		-- User presses tab
-		if uis:IsKeyDown(tab) then
-
+		
+		-- Detect lock key
+		if uis:IsKeyDown(LOCK_KEY) then
+			
 			reset()
+			
+		-- Detect switch key
+		elseif uis:IsMouseButtonPressed(SWITCH_KEY) then
+			
+			local inRange = getEnemiesInRange(enemy_list)
 
-			-- User right clicks
-		elseif uis:IsMouseButtonPressed(right_click) then
-
-			local inRange = getEnemiesInRange(workspace.Enemies:GetChildren())
-
-			if #inRange > 0 then
+			if inRange then
 
 				enemy = switchTargets(inRange, enemy)
 
@@ -456,9 +479,9 @@ local function button()
 				lockOn(enemy)
 
 			end
-
+			
 		end
-
+		
 	end
 
 end
